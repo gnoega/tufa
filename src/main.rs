@@ -16,7 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Some(cmd) => handle_command(cmd).map_err(|e| {
-            eprintln!("{}", e.to_string());
+            eprintln!("{e}");
             std::process::exit(1)
         }),
         None => {

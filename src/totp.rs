@@ -8,9 +8,10 @@ use totp_rs::TOTP;
 
 use crate::{migration, totp_uri::TotpURI};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Algorithm {
+    #[default]
     SHA1,
     SHA256,
     SHA512,
@@ -22,12 +23,6 @@ impl Display for Algorithm {
             Algorithm::SHA256 => write!(f, "SHA256"),
             Algorithm::SHA512 => write!(f, "SHA512"),
         }
-    }
-}
-
-impl Default for Algorithm {
-    fn default() -> Self {
-        Self::SHA1
     }
 }
 

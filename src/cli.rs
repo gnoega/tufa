@@ -96,12 +96,8 @@ impl From<std::io::Error> for CLIError {
 fn prompt_password() -> Result<String, CLIError> {
     print!("Enter vault password: ");
     io::stdout().flush()?;
-    let password = rpassword::read_password().map_err(|e| {
-        CLIError::VaultError(VaultError::Io(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            e.to_string(),
-        )))
-    })?;
+    let password = rpassword::read_password()
+        .map_err(|e| CLIError::VaultError(VaultError::Io(std::io::Error::other(e.to_string()))))?;
     print!("\r\x1b[2K\r\x1b[A\r\x1b[2K");
     io::stdout().flush()?;
     if password.is_empty() {
@@ -117,10 +113,7 @@ fn prompt_password_confirm() -> Result<String, CLIError> {
         print!("Enter vault password: ");
         io::stdout().flush()?;
         let password = rpassword::read_password().map_err(|e| {
-            CLIError::VaultError(VaultError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                e.to_string(),
-            )))
+            CLIError::VaultError(VaultError::Io(std::io::Error::other(e.to_string())))
         })?;
         if password.is_empty() {
             println!("Password cannot be empty. Try again.");
@@ -130,10 +123,7 @@ fn prompt_password_confirm() -> Result<String, CLIError> {
         print!("Confirm password: ");
         io::stdout().flush()?;
         let confirm = rpassword::read_password().map_err(|e| {
-            CLIError::VaultError(VaultError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                e.to_string(),
-            )))
+            CLIError::VaultError(VaultError::Io(std::io::Error::other(e.to_string())))
         })?;
 
         if password == confirm {
@@ -159,15 +149,15 @@ pub fn handle_command(cmd: Command) -> Result<(), CLIError> {
             let account = accounts
                 .iter()
                 .find(|acc| acc.display_name().to_lowercase() == account_name.to_lowercase())
-                .ok_or_else(|| CLIError::VaultError(VaultError::AccountNotFound(account_name)))?;
+                .ok_or(CLIError::VaultError(VaultError::AccountNotFound(
+                    account_name,
+                )))?;
 
             let code = account.generate_otp()?;
 
             let mut output = vec![code];
-            if issuer {
-                if let Some(iss) = &account.issuer {
-                    output.push(format!("issuer: {iss}"));
-                }
+            if issuer && let Some(iss) = &account.issuer {
+                output.push(format!("issuer: {iss}"));
             }
             if ttl {
                 output.push(format!("ttl: {}s", totp::totp_ttl()));

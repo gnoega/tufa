@@ -52,8 +52,9 @@ fn ttl_color(ttl: u64) -> Color {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 enum Screen {
+    #[default]
     VaultList,
     PasswordPrompt {
         vault_name: String,
@@ -64,12 +65,6 @@ enum Screen {
         vault_name: String,
         entries: Vec<TotpEntry>,
     },
-}
-
-impl Default for Screen {
-    fn default() -> Self {
-        Screen::VaultList
-    }
 }
 
 #[derive(Debug, Default)]
@@ -303,7 +298,7 @@ impl App {
     }
 
     pub fn handle_key_event(&mut self, key: KeyEvent) {
-        let screen = std::mem::replace(&mut self.screen, Screen::default());
+        let screen = std::mem::take(&mut self.screen);
 
         self.screen = match screen {
             Screen::VaultList => match key.code {
@@ -323,14 +318,14 @@ impl App {
                     Screen::VaultList
                 }
                 KeyCode::Enter => {
-                    if let Some(idx) = self.vault_list_state.selected() {
-                        if let Some(name) = self.vault_list.get(idx).cloned() {
-                            return self.screen = Screen::PasswordPrompt {
-                                vault_name: name,
-                                input: Zeroizing::new(String::new()),
-                                error: None,
-                            };
-                        }
+                    if let Some(idx) = self.vault_list_state.selected()
+                        && let Some(name) = self.vault_list.get(idx).cloned()
+                    {
+                        return self.screen = Screen::PasswordPrompt {
+                            vault_name: name,
+                            input: Zeroizing::new(String::new()),
+                            error: None,
+                        };
                     }
                     Screen::VaultList
                 }
@@ -418,14 +413,12 @@ impl App {
                     }
                 }
                 KeyCode::Enter => {
-                    if let Some(i) = self.totp_list_state.selected() {
-                        if let Some(entry) = entries.get(i) {
-                            if let Ok(code) = entry.generate_otp() {
-                                if copy_to_clipboard(&code) {
-                                    self.copied = Some(entry.display_name());
-                                }
-                            }
-                        }
+                    if let Some(i) = self.totp_list_state.selected()
+                        && let Some(entry) = entries.get(i)
+                        && let Ok(code) = entry.generate_otp()
+                        && copy_to_clipboard(&code)
+                    {
+                        self.copied = Some(entry.display_name());
                     }
 
                     Screen::AccountList {

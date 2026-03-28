@@ -35,12 +35,12 @@ struct OtpParameters {
 // ---------------------------------------------------------------------------
 
 // Google Authenticator's algorithm enum values
-const GA_ALGO_SHA1: i32 = 1;
+// const GA_ALGO_SHA1: i32 = 1;
 const GA_ALGO_SHA256: i32 = 2;
 const GA_ALGO_SHA512: i32 = 3;
 
 // Google Authenticator's digit enum values
-const GA_DIGITS_SIX: i32 = 1;
+// const GA_DIGITS_SIX: i32 = 1;
 const GA_DIGITS_EIGHT: i32 = 2;
 
 const OTP_TYPE_TOTP: i32 = 2;

@@ -71,6 +71,7 @@ pub struct Vault {
 }
 
 impl Vault {
+    #[cfg(test)]
     pub fn with_path(path: PathBuf) -> Self {
         Self { path }
     }
