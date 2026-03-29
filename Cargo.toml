@@ -5,6 +5,8 @@ edition = "2024"
 description = "A terminal-based TOTP authenticator"
 license = "MIT"
 repository = "https://github.com/gnoega/tufa"
+categories = ["command-line-utilities", "authentication"]
+keywords = ["totp", "2fa", "tui", "authenticator", "security"]
 
 [[bin]]
 name = "tufa"
