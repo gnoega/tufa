@@ -600,9 +600,8 @@ fn centered_rect(percent_x: u16, height: u16, area: Rect) -> Rect {
 
 pub fn time_until_next_second() -> Duration {
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-    let ms = now.subsec_millis() as u64;
-    Duration::from_millis(1000u64.saturating_sub(ms).saturating_sub(30))
-        .max(Duration::from_millis(1))
+    let ns = now.subsec_nanos() as u64;
+    Duration::from_nanos(1_000_000_000u64.saturating_sub(ns)).max(Duration::from_millis(1))
 }
 
 fn copy_to_clipboard(text: &str) -> bool {
