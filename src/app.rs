@@ -11,7 +11,9 @@ use ratatui::{
     layout::{Constraint, Layout, Margin, Rect},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table, TableState},
+    widgets::{
+        Block, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table, TableState, Wrap,
+    },
 };
 use zeroize::Zeroizing;
 
@@ -62,6 +64,10 @@ enum Screen {
         error: Option<&'static str>,
     },
     AccountList {
+        vault_name: String,
+        entries: Vec<TotpEntry>,
+    },
+    ExportPopUp {
         vault_name: String,
         entries: Vec<TotpEntry>,
     },
@@ -129,7 +135,26 @@ impl App {
                 self.render_vault_list(frame, area);
                 render_password_popup(frame, area, &vn, &input, err);
             }
-            Screen::AccountList { .. } => self.render_account_list(frame, area),
+            Screen::AccountList {
+                vault_name,
+                entries,
+            } => {
+                let entries = entries.clone();
+                let vault_name = vault_name.clone();
+                self.render_account_list(frame, area, vault_name, entries);
+            }
+            Screen::ExportPopUp {
+                entries,
+                vault_name,
+            } => {
+                let selected = self.totp_list_state.selected().unwrap_or(0);
+                let entries = entries.clone();
+                let vault_name = vault_name.clone();
+                self.render_account_list(frame, area, vault_name, entries.clone());
+                if let Some(entry) = entries.get(selected) {
+                    let _ = render_export_popup(frame, area, entry);
+                }
+            }
         }
     }
 
@@ -179,15 +204,13 @@ impl App {
         frame.render_widget(Line::from(hints), hint_area);
     }
 
-    fn render_account_list(&mut self, frame: &mut Frame, area: Rect) {
-        let Screen::AccountList {
-            vault_name,
-            entries,
-        } = &self.screen
-        else {
-            return;
-        };
-
+    fn render_account_list(
+        &mut self,
+        frame: &mut Frame,
+        area: Rect,
+        vault_name: impl Into<String>,
+        entries: Vec<TotpEntry>,
+    ) {
         let inner = area.inner(Margin {
             horizontal: 2,
             vertical: 1,
@@ -209,7 +232,7 @@ impl App {
         frame.render_widget(
             Line::from(vec![
                 Span::raw("  "),
-                Span::styled(vault_name, Style::default().fg(TEXT).bold()),
+                Span::styled(vault_name.into(), Style::default().fg(TEXT).bold()),
             ]),
             title_area,
         );
@@ -277,6 +300,7 @@ impl App {
                 let mut spans: Vec<Span> = vec![];
                 spans.extend(key_hint("↵", "copy"));
                 spans.extend(key_hint("↑↓ / jk", "navigate"));
+                spans.extend(key_hint("e", "export"));
                 spans.extend(key_hint("esc", "back"));
                 spans.extend(key_hint("q", "quit"));
                 Line::from(spans)
@@ -331,7 +355,6 @@ impl App {
                 }
                 _ => Screen::VaultList,
             },
-
             Screen::PasswordPrompt {
                 vault_name,
                 mut input,
@@ -382,7 +405,6 @@ impl App {
                     error,
                 },
             },
-
             Screen::AccountList {
                 vault_name,
                 entries,
@@ -412,6 +434,10 @@ impl App {
                         entries,
                     }
                 }
+                KeyCode::Char('e') => Screen::ExportPopUp {
+                    vault_name,
+                    entries,
+                },
                 KeyCode::Enter => {
                     if let Some(i) = self.totp_list_state.selected()
                         && let Some(entry) = entries.get(i)
@@ -426,6 +452,19 @@ impl App {
                         entries,
                     }
                 }
+                _ => Screen::AccountList {
+                    vault_name,
+                    entries,
+                },
+            },
+            Screen::ExportPopUp {
+                vault_name,
+                entries,
+            } => match key.code {
+                KeyCode::Esc => Screen::AccountList {
+                    vault_name,
+                    entries,
+                },
                 _ => Screen::AccountList {
                     vault_name,
                     entries,
@@ -485,6 +524,62 @@ fn render_password_popup(
     if let Some(msg) = error {
         frame.render_widget(Line::styled(msg, Style::default().fg(RED)), error_area);
     }
+}
+
+fn render_export_popup(
+    frame: &mut Frame,
+    area: Rect,
+    entry: &TotpEntry,
+) -> Result<(), qrcode::types::QrError> {
+    let entry_uri = entry.to_uri();
+    let uri_str = entry_uri.to_string();
+    let (qrcode_string, _qr_width, qr_height) = entry_uri.to_qrcode_rendered()?;
+
+    let popup_width = (area.width as u32 * 80 / 100) as u16;
+    let inner_width = popup_width.saturating_sub(2).max(1);
+    let uri_lines = (uri_str.len() as u16).div_ceil(inner_width).max(1);
+
+    let ideal_height = 2 + 1 + 1 + qr_height + 1 + uri_lines;
+    let popup_height = ideal_height.min(area.height.saturating_sub(2));
+
+    let popup_area = centered_rect(80, popup_height, area);
+
+    let mut hints: Vec<Span> = vec![];
+    hints.extend(key_hint("y", "yank uri"));
+    hints.extend(key_hint("esc", "back"));
+
+    let border = Block::bordered()
+        .border_style(Style::default().fg(DIM))
+        .title(Line::styled(" export ", Style::default().fg(TEXT).bold()).centered())
+        .title_bottom(Line::from(hints));
+
+    frame.render_widget(Clear, popup_area);
+    frame.render_widget(&border, popup_area);
+
+    let inner = border.inner(popup_area);
+
+    let [name_area, _, qr_area, _, uri_area] = Layout::vertical([
+        Constraint::Length(1),      // account name
+        Constraint::Length(1),      // spacer
+        Constraint::Min(qr_height), // qr code
+        Constraint::Length(1),      // spacer
+        Constraint::Min(uri_lines), // uri
+    ])
+    .areas(inner);
+
+    frame.render_widget(
+        Paragraph::new(entry.display_name()).style(Style::default().fg(TEXT)),
+        name_area,
+    );
+    frame.render_widget(Paragraph::new(qrcode_string), qr_area);
+    frame.render_widget(
+        Paragraph::new(uri_str)
+            .wrap(Wrap { trim: false })
+            .style(Style::default().fg(SUBTEXT)),
+        uri_area,
+    );
+
+    Ok(())
 }
 
 fn centered_rect(percent_x: u16, height: u16, area: Rect) -> Rect {
