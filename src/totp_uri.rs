@@ -9,13 +9,28 @@ impl TotpURI {
         Self(uri.into())
     }
 
-    pub fn to_qrcode_string(&self) -> Result<String, qrcode::types::QrError> {
-        let qr = QrCode::new(self.0.as_bytes())?;
-        Ok(qr
+    pub fn to_qrcode(&self) -> Result<QrCode, qrcode::types::QrError> {
+        QrCode::with_error_correction_level(self.0.as_bytes(), qrcode::EcLevel::L)
+    }
+
+    pub fn to_qrcode_rendered(&self) -> Result<(String, u16, u16), qrcode::types::QrError> {
+        let qr = self.to_qrcode()?;
+        let s = qr
             .render::<unicode::Dense1x2>()
             .dark_color(unicode::Dense1x2::Dark)
             .light_color(unicode::Dense1x2::Light)
-            .build())
+            .quiet_zone(false)
+            .build();
+
+        let lines: Vec<&str> = s.lines().collect();
+        let height = lines.len() as u16;
+        let width = lines.first().map(|l| l.chars().count() as u16).unwrap_or(0);
+
+        Ok((s, width, height))
+    }
+
+    pub fn to_qrcode_string(&self) -> Result<String, qrcode::types::QrError> {
+        Ok(self.to_qrcode_rendered()?.0)
     }
 }
 
