@@ -70,9 +70,7 @@ fn parse_digits(value: i32) -> u8 {
 /// HOTP entries are silently skipped since we only support TOTP.
 pub fn parse(uri: &str) -> Result<Vec<TotpEntry>, TotpError> {
     let data = extract_data(uri)?;
-    println!("migration.rs: data: {:?}", data);
     let payload = decode_payload(&data)?;
-    println!("migration.rs: payload: {:?}", payload);
 
     payload
         .otp_parameters
