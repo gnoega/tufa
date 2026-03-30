@@ -66,10 +66,12 @@ enum Screen {
     AccountList {
         vault_name: String,
         entries: Vec<TotpEntry>,
+        copied: Option<String>,
     },
     ExportPopUp {
         vault_name: String,
         entries: Vec<TotpEntry>,
+        copied: Option<String>,
     },
 }
 
@@ -79,7 +81,6 @@ pub struct App {
     vault_list: Vec<String>,
     vault_list_state: ListState,
     totp_list_state: TableState,
-    copied: Option<String>,
     exit: bool,
 }
 
@@ -107,7 +108,6 @@ impl App {
             vault_list_state,
             totp_list_state: TableState::default(),
             exit: false,
-            copied: Some(String::new()),
         }
     }
 
@@ -138,21 +138,24 @@ impl App {
             Screen::AccountList {
                 vault_name,
                 entries,
+                copied,
             } => {
                 let entries = entries.clone();
                 let vault_name = vault_name.clone();
-                self.render_account_list(frame, area, vault_name, entries);
+                self.render_account_list(frame, area, vault_name, entries, copied.clone());
             }
             Screen::ExportPopUp {
                 entries,
                 vault_name,
+                copied,
             } => {
                 let selected = self.totp_list_state.selected().unwrap_or(0);
                 let entries = entries.clone();
                 let vault_name = vault_name.clone();
-                self.render_account_list(frame, area, vault_name, entries.clone());
+                let copied = copied.clone();
+                self.render_account_list(frame, area, vault_name, entries.clone(), None);
                 if let Some(entry) = entries.get(selected) {
-                    let _ = render_export_popup(frame, area, entry);
+                    let _ = render_export_popup(frame, area, entry, copied.clone());
                 }
             }
         }
@@ -210,6 +213,7 @@ impl App {
         area: Rect,
         vault_name: impl Into<String>,
         entries: Vec<TotpEntry>,
+        copied: Option<String>,
     ) {
         let inner = area.inner(Margin {
             horizontal: 2,
@@ -290,7 +294,7 @@ impl App {
         ]);
         frame.render_widget(bar, gauge_area);
 
-        let hint_line = match &self.copied {
+        let hint_line = match copied {
             Some(name) => Line::from(vec![
                 Span::styled("✓ ", Style::default().fg(GREEN).bold()),
                 Span::styled(name.clone(), Style::default().fg(TEXT)),
@@ -316,7 +320,11 @@ impl App {
                 _ => {}
             }
         } else {
-            self.copied = None
+            match &mut self.screen {
+                Screen::AccountList { copied, .. } => *copied = None,
+                Screen::ExportPopUp { copied, .. } => *copied = None,
+                _ => {}
+            }
         }
         Ok(())
     }
@@ -385,6 +393,7 @@ impl App {
                             Screen::AccountList {
                                 vault_name,
                                 entries,
+                                copied: None,
                             }
                         }
                         Err(VaultError::WrongPassword) => Screen::PasswordPrompt {
@@ -408,12 +417,14 @@ impl App {
             Screen::AccountList {
                 vault_name,
                 entries,
+                copied,
             } => match key.code {
                 KeyCode::Char('q') => {
                     self.exit = true;
                     Screen::AccountList {
                         vault_name,
                         entries,
+                        copied,
                     }
                 }
                 KeyCode::Esc => Screen::VaultList,
@@ -424,6 +435,7 @@ impl App {
                     Screen::AccountList {
                         vault_name,
                         entries,
+                        copied,
                     }
                 }
                 KeyCode::Up | KeyCode::Char('k') => {
@@ -432,42 +444,65 @@ impl App {
                     Screen::AccountList {
                         vault_name,
                         entries,
+                        copied,
                     }
                 }
                 KeyCode::Char('e') => Screen::ExportPopUp {
                     vault_name,
                     entries,
+                    copied,
                 },
                 KeyCode::Enter => {
+                    let mut copied = copied.clone();
                     if let Some(i) = self.totp_list_state.selected()
                         && let Some(entry) = entries.get(i)
                         && let Ok(code) = entry.generate_otp()
                         && copy_to_clipboard(&code)
                     {
-                        self.copied = Some(entry.display_name());
+                        copied = Some(entry.display_name());
                     }
 
                     Screen::AccountList {
                         vault_name,
                         entries,
+                        copied,
                     }
                 }
                 _ => Screen::AccountList {
                     vault_name,
                     entries,
+                    copied,
                 },
             },
             Screen::ExportPopUp {
                 vault_name,
                 entries,
+                copied,
             } => match key.code {
                 KeyCode::Esc => Screen::AccountList {
                     vault_name,
                     entries,
+                    copied,
                 },
+                KeyCode::Char('y') => {
+                    let mut copied = copied.clone();
+                    if let Some(i) = self.totp_list_state.selected()
+                        && let Some(entry) = entries.get(i)
+                        && copy_to_clipboard(entry.to_uri().as_str())
+                    {
+                        copied = Some(entry.display_name());
+                    };
+
+                    Screen::ExportPopUp {
+                        vault_name,
+                        entries,
+                        copied,
+                    }
+                }
                 _ => Screen::AccountList {
                     vault_name,
                     entries,
+                    copied,
                 },
             },
         };
@@ -530,6 +565,7 @@ fn render_export_popup(
     frame: &mut Frame,
     area: Rect,
     entry: &TotpEntry,
+    copied: Option<String>,
 ) -> Result<(), qrcode::types::QrError> {
     let entry_uri = entry.to_uri();
     let uri_str = entry_uri.to_string();
@@ -544,14 +580,25 @@ fn render_export_popup(
 
     let popup_area = centered_rect(80, popup_height, area);
 
-    let mut hints: Vec<Span> = vec![];
-    hints.extend(key_hint("y", "yank uri"));
-    hints.extend(key_hint("esc", "back"));
+    let hint_line = match copied {
+        Some(name) => Line::from(vec![
+            Span::styled("✓ ", Style::default().fg(GREEN).bold()),
+            Span::styled("uri ", Style::default().fg(TEXT)),
+            Span::styled(name.clone(), Style::default().fg(TEXT)),
+            Span::styled(" copied to clipboard", Style::default().fg(SUBTEXT)),
+        ]),
+        None => {
+            let mut hints: Vec<Span> = vec![];
+            hints.extend(key_hint("y", "yank uri"));
+            hints.extend(key_hint("esc", "back"));
+            Line::from(hints)
+        }
+    };
 
     let border = Block::bordered()
         .border_style(Style::default().fg(DIM))
         .title(Line::styled(" export ", Style::default().fg(TEXT).bold()).centered())
-        .title_bottom(Line::from(hints));
+        .title_bottom(Line::from(hint_line));
 
     frame.render_widget(Clear, popup_area);
     frame.render_widget(&border, popup_area);
