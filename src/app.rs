@@ -598,7 +598,7 @@ fn render_export_popup(
     let border = Block::bordered()
         .border_style(Style::default().fg(DIM))
         .title(Line::styled(" export ", Style::default().fg(TEXT).bold()).centered())
-        .title_bottom(Line::from(hint_line));
+        .title_bottom(hint_line);
 
     frame.render_widget(Clear, popup_area);
     frame.render_widget(&border, popup_area);
