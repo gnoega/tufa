@@ -6,6 +6,7 @@ use crate::{
 };
 mod app;
 mod cli;
+mod clipboard;
 mod migration;
 mod totp;
 mod totp_uri;

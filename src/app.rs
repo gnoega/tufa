@@ -18,6 +18,7 @@ use ratatui::{
 use zeroize::Zeroizing;
 
 use crate::{
+    clipboard,
     totp::{TotpEntry, totp_ttl},
     vault::{Vault, VaultError},
 };
@@ -457,7 +458,7 @@ impl App {
                     if let Some(i) = self.totp_list_state.selected()
                         && let Some(entry) = entries.get(i)
                         && let Ok(code) = entry.generate_otp()
-                        && copy_to_clipboard(&code)
+                        && clipboard::copy_to_clipboard(&code)
                     {
                         copied = Some(entry.display_name());
                     }
@@ -488,7 +489,7 @@ impl App {
                     let mut copied = copied.clone();
                     if let Some(i) = self.totp_list_state.selected()
                         && let Some(entry) = entries.get(i)
-                        && copy_to_clipboard(entry.to_uri().as_str())
+                        && clipboard::copy_to_clipboard(entry.to_uri().as_str())
                     {
                         copied = Some(entry.display_name());
                     };
@@ -649,32 +650,4 @@ pub fn time_until_next_second() -> Duration {
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
     let ns = now.subsec_nanos() as u64;
     Duration::from_nanos(1_000_000_000u64.saturating_sub(ns)).max(Duration::from_millis(1))
-}
-
-fn copy_to_clipboard(text: &str) -> bool {
-    use std::io::Write;
-
-    let candidates: &[(&str, &[&str])] = &[
-        ("wl-copy", &[]),                        // Wayland
-        ("xclip", &["-selection", "clipboard"]), // X11
-        ("xsel", &["-bi"]),                      // X11 alt
-        ("pbcopy", &[]),                         // macOS
-    ];
-
-    for (cmd, args) in candidates {
-        if let Ok(mut child) = std::process::Command::new(cmd)
-            .args(*args)
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-        {
-            if let Some(stdin) = child.stdin.as_mut() {
-                let _ = stdin.write_all(text.as_bytes());
-            }
-            if child.wait().is_ok() {
-                return true;
-            }
-        }
-    }
-
-    false
 }
