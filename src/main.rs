@@ -8,8 +8,10 @@ mod app;
 mod cli;
 mod clipboard;
 mod migration;
+mod screen;
 mod totp;
 mod totp_uri;
+mod ui;
 mod vault;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
