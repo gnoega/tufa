@@ -8,6 +8,8 @@ use ratatui::{DefaultTerminal, Frame};
 
 use crate::screen::{Screen, vault_list::VaultList};
 
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[derive(Debug, Default)]
 pub struct App {
     pub screen: Screen,
@@ -22,11 +24,11 @@ impl App {
 
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         loop {
-            terminal.draw(|frame| self.draw(frame))?;
-            self.handle_events()?;
             if matches!(self.screen, Screen::Exit) {
                 break;
             }
+            terminal.draw(|frame| self.draw(frame))?;
+            self.handle_events()?;
         }
         Ok(())
     }
@@ -40,7 +42,7 @@ impl App {
             }
             Screen::AccountList(s) => s.render(frame),
             Screen::ExportPopUp(s) => s.render(frame),
-            _ => {}
+            Screen::Exit => {}
         }
     }
 
