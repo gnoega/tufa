@@ -9,7 +9,7 @@ use ratatui::{
 use zeroize::Zeroizing;
 
 use crate::{
-    screen::{Screen, account_list::AccountList, vault_list::VaultList},
+    totp::TotpEntry,
     ui::{ACCENT, RED, SUBTEXT, TEXT, centered_rect, full_separator, key_hint},
     vault::{Vault, VaultError},
 };
@@ -19,6 +19,13 @@ pub struct PasswordPrompt {
     pub vault_name: String,
     pub input: Zeroizing<String>,
     pub error: Option<&'static str>,
+}
+
+pub enum PasswordState {
+    Active(PasswordPrompt),
+    Cancelled,
+    Unlocked(String, Zeroizing<String>, Vec<TotpEntry>),
+    Error(String, &'static str),
 }
 
 impl PasswordPrompt {
@@ -85,25 +92,25 @@ impl PasswordPrompt {
         }
     }
 
-    pub fn handle_key(mut self, key: KeyCode) -> Screen {
+    pub fn handle_key(mut self, key: KeyCode) -> PasswordState {
         match key {
-            KeyCode::Esc => Screen::VaultList(VaultList::new()),
+            KeyCode::Esc => PasswordState::Cancelled,
             KeyCode::Backspace => {
                 self.input.pop();
-                Screen::PasswordPrompt(self)
+                PasswordState::Active(self)
             }
             KeyCode::Char(c) => {
                 self.input.push(c);
-                Screen::PasswordPrompt(self)
+                PasswordState::Active(self)
             }
             KeyCode::Enter => match Vault::new(&self.vault_name).load(self.input.as_bytes()) {
-                Ok(entries) => Screen::AccountList(AccountList::new(self.vault_name, entries)),
+                Ok(entries) => PasswordState::Unlocked(self.vault_name, self.input, entries),
                 Err(VaultError::WrongPassword) => {
-                    Screen::password_error(self.vault_name, "wrong password")
+                    PasswordState::Error(self.vault_name, "wrong password")
                 }
-                Err(_) => Screen::password_error(self.vault_name, "Failed to open vault"),
+                Err(_) => PasswordState::Error(self.vault_name, "failed to open the fault"),
             },
-            _ => Screen::PasswordPrompt(PasswordPrompt::new(self.vault_name)),
+            _ => PasswordState::Active(self),
         }
     }
 }

@@ -9,17 +9,24 @@ use ratatui::{
     widgets::{List, ListItem, ListState},
 };
 
-use crate::ui::render_version;
 use crate::{
-    screen::Screen,
+    screen::{
+        Screen,
+        password::{self, PasswordState},
+    },
     ui::{ACCENT, TEXT, full_separator, key_hint},
     vault::Vault,
 };
+use crate::{
+    screen::{account_list::AccountList, password::PasswordPrompt},
+    ui::render_version,
+};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct VaultList {
     vaults: Vec<String>,
     state: ListState,
+    popup: Option<PasswordPrompt>,
 }
 
 impl VaultList {
@@ -39,7 +46,11 @@ impl VaultList {
             })
             .collect();
 
-        Self { vaults, state }
+        Self {
+            vaults,
+            state,
+            ..Default::default()
+        }
     }
 
     pub fn render(&mut self, frame: &mut Frame) {
@@ -92,9 +103,33 @@ impl VaultList {
         frame.render_widget(Line::from(hints), left_hint);
 
         render_version(frame, version);
+
+        if let Some(popup) = &self.popup {
+            popup.render(frame);
+        }
     }
 
     pub fn handle_key(mut self, key: KeyCode) -> Screen {
+        if let Some(popup) = self.popup.take() {
+            return match popup.handle_key(key) {
+                PasswordState::Active(p) => {
+                    self.popup = Some(p);
+                    Screen::VaultList(self)
+                }
+                PasswordState::Cancelled => {
+                    self.popup = None;
+                    Screen::VaultList(self)
+                }
+                PasswordState::Unlocked(vault_name, pw, entries) => {
+                    Screen::AccountList(AccountList::new(vault_name, entries).with_password(pw))
+                }
+                PasswordState::Error(name, msg) => {
+                    self.popup = Some(PasswordPrompt::with_error(name, Some(msg)));
+                    Screen::VaultList(self)
+                }
+            };
+        }
+
         match key {
             KeyCode::Char('q') => Screen::Exit,
             KeyCode::Down | KeyCode::Char('j') => {
@@ -112,7 +147,7 @@ impl VaultList {
                 if let Some(idx) = self.state.selected()
                     && let Some(name) = self.vaults.get(idx).cloned()
                 {
-                    return Screen::password_prompt(name);
+                    self.popup = Some(password::PasswordPrompt::new(name))
                 }
                 Screen::VaultList(self)
             }

@@ -9,30 +9,30 @@ use ratatui::{
 
 use crate::{
     clipboard,
-    screen::{Screen, account_list::AccountList},
     totp::TotpEntry,
     ui::{DIM, GREEN, SUBTEXT, TEXT, centered_rect, key_hint},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ExportTotp {
-    pub parent: AccountList,
+    entry: TotpEntry,
+    copied: Option<String>,
+}
 
-    pub entry: TotpEntry,
-    pub copied: Option<String>,
+pub enum ExportState {
+    Active(ExportTotp),
+    Closed,
 }
 
 impl ExportTotp {
-    pub fn new(parent: AccountList, entry: TotpEntry) -> Self {
+    pub fn new(entry: TotpEntry) -> Self {
         Self {
-            parent,
             entry,
             copied: None,
         }
     }
 
-    pub fn render(&mut self, frame: &mut Frame) {
-        self.parent.render(frame);
+    pub fn render(&self, frame: &mut Frame) {
         let _ = self.render_popup(frame);
     }
 
@@ -99,17 +99,21 @@ impl ExportTotp {
 
         Ok(())
     }
-    pub fn handle_key(mut self, key: KeyCode) -> Screen {
+    pub fn handle_key(mut self, key: KeyCode) -> ExportState {
         match key {
-            KeyCode::Esc => Screen::AccountList(self.parent),
+            KeyCode::Esc => ExportState::Closed,
             KeyCode::Char('y') => {
                 if clipboard::copy_to_clipboard(self.entry.to_uri().as_str()) {
                     self.copied = Some(self.entry.display_name())
                 }
 
-                Screen::ExportPopUp(self)
+                ExportState::Active(self)
             }
-            _ => Screen::ExportPopUp(self),
+            _ => ExportState::Active(self),
         }
+    }
+
+    pub fn cleanup(&mut self) {
+        self.copied = None
     }
 }

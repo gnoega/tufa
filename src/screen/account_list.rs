@@ -6,20 +6,35 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Cell, Row, Table, TableState},
 };
+use zeroize::Zeroizing;
 
 use crate::{
     clipboard,
-    screen::{Screen, export::ExportTotp, vault_list::VaultList},
+    screen::{
+        Screen,
+        confirm::{Confirm, ConfirmKind},
+        export::{ExportState, ExportTotp},
+        vault_list::VaultList,
+    },
     totp::{TotpEntry, totp_ttl},
     ui::{ACCENT, DIM, GREEN, SUBTEXT, TEXT, full_separator, key_hint, render_version, ttl_color},
+    vault::Vault,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct AccountList {
     vault_name: String,
+    password: Zeroizing<String>,
     entries: Vec<TotpEntry>,
     state: TableState,
-    pub copied: Option<String>,
+    notification: Option<String>,
+    popup: Option<PopUpKind>,
+}
+
+#[derive(Debug)]
+enum PopUpKind {
+    ExportTotp(ExportTotp),
+    ConfirmDelete { confirm: Confirm, index: usize },
 }
 
 impl AccountList {
@@ -30,8 +45,14 @@ impl AccountList {
             vault_name: vault_name.into(),
             entries,
             state,
-            copied: None,
+            notification: None,
+            ..Default::default()
         }
+    }
+
+    pub fn with_password(mut self, password: Zeroizing<String>) -> Self {
+        self.password = password;
+        self
     }
 
     pub fn render(&mut self, frame: &mut Frame) {
@@ -118,7 +139,7 @@ impl AccountList {
         let [hint, version] =
             Layout::horizontal([Constraint::Fill(1), Constraint::Fill(1)]).areas(hint_area);
 
-        let hint_line = match &self.copied {
+        let hint_line = match &self.notification {
             Some(name) => Line::from(vec![
                 Span::styled("✓ ", Style::default().fg(GREEN).bold()),
                 Span::styled(name.clone(), Style::default().fg(TEXT)),
@@ -129,6 +150,7 @@ impl AccountList {
                 spans.extend(key_hint("↵", "copy"));
                 spans.extend(key_hint("↑↓ / jk", "navigate"));
                 spans.extend(key_hint("e", "export"));
+                spans.extend(key_hint("d", "delete"));
                 spans.extend(key_hint("esc", "back"));
                 spans.extend(key_hint("q", "quit"));
                 Line::from(spans)
@@ -136,9 +158,46 @@ impl AccountList {
         };
         frame.render_widget(hint_line, hint);
         render_version(frame, version);
+
+        if let Some(kind) = &self.popup {
+            match kind {
+                PopUpKind::ExportTotp(popup) => popup.render(frame),
+                PopUpKind::ConfirmDelete { confirm, .. } => confirm.render(frame),
+            }
+        }
     }
 
     pub fn handle_key(mut self, key: KeyCode) -> Screen {
+        if let Some(kind) = self.popup.take() {
+            match kind {
+                PopUpKind::ExportTotp(popup) => {
+                    return match popup.handle_key(key) {
+                        ExportState::Active(export_totp) => {
+                            self.popup = Some(PopUpKind::ExportTotp(export_totp));
+                            Screen::AccountList(self)
+                        }
+                        ExportState::Closed => Screen::AccountList(self),
+                    };
+                }
+                PopUpKind::ConfirmDelete { confirm, index } => {
+                    return match confirm.handle_key(key) {
+                        ConfirmKind::Yes => {
+                            self.entries.remove(index);
+                            match Vault::new(&self.vault_name)
+                                .save(&self.entries, self.password.as_bytes())
+                            {
+                                Ok(_) => self.notification = Some("item deleted".into()),
+                                Err(_) => self.notification = Some("failed to save".into()),
+                            }
+
+                            Screen::AccountList(self)
+                        }
+                        ConfirmKind::No | ConfirmKind::Stale => Screen::AccountList(self),
+                    };
+                }
+            };
+        }
+
         match key {
             KeyCode::Char('q') => Screen::Exit,
             KeyCode::Esc => Screen::VaultList(VaultList::new()),
@@ -156,9 +215,23 @@ impl AccountList {
             KeyCode::Char('e') => {
                 let entry = self.get_selected();
                 match entry {
-                    Some(entry) => Screen::ExportPopUp(ExportTotp::new(self, entry)),
+                    Some(entry) => {
+                        self.popup = Some(PopUpKind::ExportTotp(ExportTotp::new(entry)));
+                        Screen::AccountList(self)
+                    }
                     None => Screen::AccountList(self),
                 }
+            }
+            KeyCode::Char('d') => {
+                if let Some(i) = self.state.selected()
+                    && let Some(entry) = self.entries.get(i)
+                {
+                    self.popup = Some(PopUpKind::ConfirmDelete {
+                        confirm: Confirm::new(format!("delete {}?", entry.display_name())),
+                        index: i,
+                    });
+                }
+                Screen::AccountList(self)
             }
             KeyCode::Enter => {
                 if let Some(i) = self.state.selected()
@@ -166,7 +239,7 @@ impl AccountList {
                     && let Ok(code) = entry.generate_otp()
                     && clipboard::copy_to_clipboard(&code)
                 {
-                    self.copied = Some(entry.display_name());
+                    self.notification = Some(entry.display_name());
                 }
 
                 Screen::AccountList(self)
@@ -176,5 +249,15 @@ impl AccountList {
     }
     pub fn get_selected(&self) -> Option<TotpEntry> {
         self.entries.get(self.state.selected()?).cloned()
+    }
+
+    pub fn cleanup(&mut self) {
+        self.notification = None;
+        if let Some(kind) = &mut self.popup {
+            match kind {
+                PopUpKind::ExportTotp(popup) => popup.cleanup(),
+                PopUpKind::ConfirmDelete { .. } => (),
+            }
+        }
     }
 }

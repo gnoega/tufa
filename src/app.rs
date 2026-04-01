@@ -6,7 +6,7 @@ use std::{
 use crossterm::event::{self, Event, KeyEvent, KeyEventKind};
 use ratatui::{DefaultTerminal, Frame};
 
-use crate::screen::{Screen, vault_list::VaultList};
+use crate::screen::Screen;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -36,12 +36,7 @@ impl App {
     fn draw(&mut self, frame: &mut Frame) {
         match &mut self.screen {
             Screen::VaultList(s) => s.render(frame),
-            Screen::PasswordPrompt(s) => {
-                VaultList::new().render(frame);
-                s.render(frame);
-            }
             Screen::AccountList(s) => s.render(frame),
-            Screen::ExportPopUp(s) => s.render(frame),
             Screen::Exit => {}
         }
     }
@@ -53,9 +48,9 @@ impl App {
                 _ => {}
             }
         } else {
+            #[allow(clippy::single_match)]
             match &mut self.screen {
-                Screen::AccountList(s) => s.copied = None,
-                Screen::ExportPopUp(s) => s.copied = None,
+                Screen::AccountList(s) => s.cleanup(),
                 _ => {}
             }
         }
@@ -67,9 +62,7 @@ impl App {
 
         self.screen = match screen {
             Screen::VaultList(s) => s.handle_key(key.code),
-            Screen::PasswordPrompt(s) => s.handle_key(key.code),
             Screen::AccountList(s) => s.handle_key(key.code),
-            Screen::ExportPopUp(s) => s.handle_key(key.code),
             Screen::Exit => Screen::Exit,
         };
     }
