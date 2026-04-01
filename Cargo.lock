@@ -2446,7 +2446,7 @@ dependencies = [
 
 [[package]]
 name = "tufa-rs"
-version = "0.3.5"
+version = "0.4.8"
 dependencies = [
  "aes-gcm",
  "argon2",
