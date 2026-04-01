@@ -1,8 +1,11 @@
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
 };
+
+use crate::app;
 
 pub const DIM: Color = Color::Rgb(100, 100, 100);
 pub const SUBTEXT: Color = Color::Rgb(150, 150, 150);
@@ -50,4 +53,10 @@ pub fn centered_rect(percent_x: u16, height: u16, area: Rect) -> Rect {
         Constraint::Fill(1),
     ])
     .split(mid)[1]
+}
+
+pub fn render_version(frame: &mut Frame, rect: Rect) {
+    let version =
+        Line::styled(format!("v{}", app::VERSION), Style::default().fg(DIM)).right_aligned();
+    frame.render_widget(version, rect);
 }

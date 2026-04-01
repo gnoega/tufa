@@ -11,7 +11,7 @@ use crate::{
     clipboard,
     screen::{Screen, export::ExportTotp, vault_list::VaultList},
     totp::{TotpEntry, totp_ttl},
-    ui::{ACCENT, DIM, GREEN, SUBTEXT, TEXT, full_separator, key_hint, ttl_color},
+    ui::{ACCENT, DIM, GREEN, SUBTEXT, TEXT, full_separator, key_hint, render_version, ttl_color},
 };
 
 #[derive(Debug)]
@@ -115,6 +115,9 @@ impl AccountList {
         ]);
         frame.render_widget(bar, gauge_area);
 
+        let [hint, version] =
+            Layout::horizontal([Constraint::Fill(1), Constraint::Fill(1)]).areas(hint_area);
+
         let hint_line = match &self.copied {
             Some(name) => Line::from(vec![
                 Span::styled("✓ ", Style::default().fg(GREEN).bold()),
@@ -131,7 +134,8 @@ impl AccountList {
                 Line::from(spans)
             }
         };
-        frame.render_widget(hint_line, hint_area);
+        frame.render_widget(hint_line, hint);
+        render_version(frame, version);
     }
 
     pub fn handle_key(mut self, key: KeyCode) -> Screen {

@@ -9,6 +9,7 @@ use ratatui::{
     widgets::{List, ListItem, ListState},
 };
 
+use crate::ui::render_version;
 use crate::{
     screen::Screen,
     ui::{ACCENT, TEXT, full_separator, key_hint},
@@ -81,11 +82,16 @@ impl VaultList {
 
         frame.render_stateful_widget(list, list_area, &mut self.state);
 
+        let [left_hint, version] =
+            Layout::horizontal([Constraint::Fill(1), Constraint::Min(1)]).areas(hint_area);
+
         let mut hints: Vec<Span> = vec![];
         hints.extend(key_hint("↵", "open"));
         hints.extend(key_hint("↑↓ / jk", "navigate"));
         hints.extend(key_hint("q", "quit"));
-        frame.render_widget(Line::from(hints), hint_area);
+        frame.render_widget(Line::from(hints), left_hint);
+
+        render_version(frame, version);
     }
 
     pub fn handle_key(mut self, key: KeyCode) -> Screen {
