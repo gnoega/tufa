@@ -4,12 +4,13 @@ use ratatui::{
     layout::{Constraint, Layout, Margin},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Cell, Row, Table, TableState},
+    widgets::{Cell, Paragraph, Row, Table, TableState},
 };
 use zeroize::Zeroizing;
 
 use crate::{
     clipboard,
+    notification::Notification,
     screen::{
         Screen,
         confirm::{Confirm, ConfirmKind},
@@ -17,7 +18,7 @@ use crate::{
         vault_list::VaultList,
     },
     totp::{TotpEntry, totp_ttl},
-    ui::{ACCENT, DIM, GREEN, SUBTEXT, TEXT, full_separator, key_hint, render_version, ttl_color},
+    ui::{ACCENT, DIM, TEXT, full_separator, key_hint, render_version, ttl_color},
     vault::Vault,
 };
 
@@ -27,8 +28,16 @@ pub struct AccountList {
     password: Zeroizing<String>,
     entries: Vec<TotpEntry>,
     state: TableState,
-    notification: Option<String>,
+    bottom_bar: BottomBarKind,
     popup: Option<PopUpKind>,
+}
+
+#[derive(Debug, Default)]
+enum BottomBarKind {
+    #[default]
+    Hint,
+    Notification(Notification),
+    Search(String),
 }
 
 #[derive(Debug)]
@@ -45,7 +54,6 @@ impl AccountList {
             vault_name: vault_name.into(),
             entries,
             state,
-            notification: None,
             ..Default::default()
         }
     }
@@ -62,13 +70,13 @@ impl AccountList {
             vertical: 1,
         });
 
-        let [title_area, sep_area, table_area, gauge_area, _, hint_area] = Layout::vertical([
+        let [title_area, sep_area, table_area, gauge_area, _, bottom_area] = Layout::vertical([
             Constraint::Length(1), // vault name
             Constraint::Length(1), // separator
             Constraint::Fill(1),   // table
             Constraint::Length(1), // gauge
             Constraint::Length(1), // spacer
-            Constraint::Length(1), // hints
+            Constraint::Length(1), // bottom_area
         ])
         .areas(inner);
 
@@ -136,28 +144,34 @@ impl AccountList {
         ]);
         frame.render_widget(bar, gauge_area);
 
-        let [hint, version] =
-            Layout::horizontal([Constraint::Fill(1), Constraint::Fill(1)]).areas(hint_area);
+        match &self.bottom_bar {
+            BottomBarKind::Hint => {
+                let [hint, version] = Layout::horizontal([Constraint::Fill(1), Constraint::Max(8)])
+                    .areas(bottom_area);
+                let mut hints: Vec<Span> = vec![];
+                hints.extend(key_hint("↵", "copy"));
+                hints.extend(key_hint("↑↓ / jk", "navigate"));
+                hints.extend(key_hint("e", "export"));
+                hints.extend(key_hint("d", "delete"));
+                hints.extend(key_hint("esc", "back"));
+                hints.extend(key_hint("q", "quit"));
+                hints.extend(key_hint("/", "search"));
+                let hint_line = Line::from(hints);
 
-        let hint_line = match &self.notification {
-            Some(name) => Line::from(vec![
-                Span::styled("✓ ", Style::default().fg(GREEN).bold()),
-                Span::styled(name.clone(), Style::default().fg(TEXT)),
-                Span::styled(" copied to clipboard", Style::default().fg(SUBTEXT)),
-            ]),
-            None => {
-                let mut spans: Vec<Span> = vec![];
-                spans.extend(key_hint("↵", "copy"));
-                spans.extend(key_hint("↑↓ / jk", "navigate"));
-                spans.extend(key_hint("e", "export"));
-                spans.extend(key_hint("d", "delete"));
-                spans.extend(key_hint("esc", "back"));
-                spans.extend(key_hint("q", "quit"));
-                Line::from(spans)
+                frame.render_widget(hint_line, hint);
+                render_version(frame, version);
+            }
+            BottomBarKind::Notification(n) => {
+                frame.render_widget(n.draw(), bottom_area);
+            }
+            BottomBarKind::Search(query) => {
+                let input = format!("{}▌", query);
+                frame.render_widget(
+                    Paragraph::new(input).style(Style::default().fg(TEXT)),
+                    bottom_area,
+                );
             }
         };
-        frame.render_widget(hint_line, hint);
-        render_version(frame, version);
 
         if let Some(kind) = &self.popup {
             match kind {
@@ -168,6 +182,19 @@ impl AccountList {
     }
 
     pub fn handle_key(mut self, key: KeyCode) -> Screen {
+        if let BottomBarKind::Search(ref mut query) = self.bottom_bar {
+            match key {
+                KeyCode::Char(c) => query.push(c),
+                KeyCode::Backspace => {
+                    query.pop();
+                }
+                KeyCode::Esc => self.bottom_bar = BottomBarKind::Hint,
+                KeyCode::Enter => {}
+                _ => {}
+            }
+            return Screen::AccountList(self);
+        }
+
         if let Some(kind) = self.popup.take() {
             match kind {
                 PopUpKind::ExportTotp(popup) => {
@@ -186,8 +213,8 @@ impl AccountList {
                             match Vault::new(&self.vault_name)
                                 .save(&self.entries, self.password.as_bytes())
                             {
-                                Ok(_) => self.notification = Some("item deleted".into()),
-                                Err(_) => self.notification = Some("failed to save".into()),
+                                Ok(_) => self.notify(Notification::info("item deleted")),
+                                Err(e) => self.notify(Notification::danger(e.to_string())),
                             }
 
                             Screen::AccountList(self)
@@ -233,13 +260,20 @@ impl AccountList {
                 }
                 Screen::AccountList(self)
             }
+            KeyCode::Char('/') => {
+                self.bottom_bar = BottomBarKind::Search(String::default());
+                Screen::AccountList(self)
+            }
             KeyCode::Enter => {
                 if let Some(i) = self.state.selected()
                     && let Some(entry) = self.entries.get(i)
                     && let Ok(code) = entry.generate_otp()
                     && clipboard::copy_to_clipboard(&code)
                 {
-                    self.notification = Some(entry.display_name());
+                    self.notify(Notification::success(format!(
+                        "{} copied to the clipboard",
+                        entry.display_name(),
+                    )));
                 }
 
                 Screen::AccountList(self)
@@ -252,12 +286,21 @@ impl AccountList {
     }
 
     pub fn cleanup(&mut self) {
-        self.notification = None;
+        if let BottomBarKind::Notification(n) = &self.bottom_bar
+            && n.is_expired()
+        {
+            self.bottom_bar = BottomBarKind::Hint
+        }
+
         if let Some(kind) = &mut self.popup {
             match kind {
                 PopUpKind::ExportTotp(popup) => popup.cleanup(),
                 PopUpKind::ConfirmDelete { .. } => (),
             }
         }
+    }
+
+    fn notify(&mut self, n: Notification) {
+        self.bottom_bar = BottomBarKind::Notification(n)
     }
 }

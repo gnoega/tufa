@@ -9,14 +9,21 @@ use ratatui::{
 
 use crate::{
     clipboard,
+    notification::Notification,
     totp::TotpEntry,
-    ui::{DIM, GREEN, SUBTEXT, TEXT, centered_rect, key_hint},
+    ui::{DIM, SUBTEXT, TEXT, centered_rect, key_hint},
 };
 
 #[derive(Debug, Clone)]
 pub struct ExportTotp {
     entry: TotpEntry,
-    copied: Option<String>,
+    bottom_bar: BottomBarKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum BottomBarKind {
+    Hint,
+    Notification(Notification),
 }
 
 pub enum ExportState {
@@ -28,7 +35,7 @@ impl ExportTotp {
     pub fn new(entry: TotpEntry) -> Self {
         Self {
             entry,
-            copied: None,
+            bottom_bar: BottomBarKind::Hint,
         }
     }
 
@@ -51,14 +58,9 @@ impl ExportTotp {
 
         let popup_area = centered_rect(80, popup_height, area);
 
-        let hint_line = match &self.copied {
-            Some(name) => Line::from(vec![
-                Span::styled("✓ ", Style::default().fg(GREEN).bold()),
-                Span::styled("uri ", Style::default().fg(TEXT)),
-                Span::styled(name.clone(), Style::default().fg(TEXT)),
-                Span::styled(" copied to clipboard", Style::default().fg(SUBTEXT)),
-            ]),
-            None => {
+        let hint_line = match &self.bottom_bar {
+            BottomBarKind::Notification(notification) => notification.draw(),
+            BottomBarKind::Hint => {
                 let mut hints: Vec<Span> = vec![];
                 hints.extend(key_hint("y", "yank uri"));
                 hints.extend(key_hint("esc", "back"));
@@ -104,7 +106,9 @@ impl ExportTotp {
             KeyCode::Esc => ExportState::Closed,
             KeyCode::Char('y') => {
                 if clipboard::copy_to_clipboard(self.entry.to_uri().as_str()) {
-                    self.copied = Some(self.entry.display_name())
+                    self.bottom_bar = BottomBarKind::Notification(Notification::success(
+                        "uri copied to the clipboard",
+                    ))
                 }
 
                 ExportState::Active(self)
@@ -114,6 +118,10 @@ impl ExportTotp {
     }
 
     pub fn cleanup(&mut self) {
-        self.copied = None
+        if let BottomBarKind::Notification(n) = &self.bottom_bar
+            && n.is_expired()
+        {
+            self.bottom_bar = BottomBarKind::Hint
+        }
     }
 }
