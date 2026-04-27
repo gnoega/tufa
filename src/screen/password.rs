@@ -69,7 +69,7 @@ impl PasswordPrompt {
         frame.render_widget(
             Line::from(vec![
                 Span::styled("unlock ", Style::default().fg(SUBTEXT)),
-                Span::styled(self.vault_name.clone(), Style::default().fg(TEXT).bold()),
+                Span::styled(&self.vault_name, Style::default().fg(TEXT).bold()),
             ]),
             label_area,
         );
