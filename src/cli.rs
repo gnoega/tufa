@@ -9,7 +9,7 @@ use crate::vault::{Vault, VaultError};
 #[command(version, about)]
 pub struct Cli {
     #[command(subcommand)]
-    pub(crate) command: Option<Command>,
+    pub command: Option<Command>,
 }
 
 #[derive(Debug, Subcommand)]
