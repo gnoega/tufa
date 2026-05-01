@@ -8,7 +8,6 @@ mod app;
 mod cli;
 mod clipboard;
 mod migration;
-mod notification;
 mod screen;
 mod totp;
 mod totp_uri;

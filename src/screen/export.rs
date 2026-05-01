@@ -9,7 +9,7 @@ use ratatui::{
 
 use crate::{
     clipboard,
-    notification::Notification,
+    screen::notification::Notification,
     totp::TotpEntry,
     ui::{DIM, SUBTEXT, TEXT, centered_rect, key_hint},
 };

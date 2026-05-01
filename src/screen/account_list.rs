@@ -4,17 +4,17 @@ use ratatui::{
     layout::{Constraint, Layout, Margin},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Cell, Paragraph, Row, Table, TableState},
+    widgets::{Cell, Row, Table, TableState},
 };
 use zeroize::Zeroizing;
 
 use crate::{
     clipboard,
-    notification::Notification,
     screen::{
         Screen,
         confirm::{Confirm, ConfirmKind},
         export::{ExportState, ExportTotp},
+        notification::Notification,
         vault_list::VaultList,
     },
     totp::{TotpEntry, totp_ttl},

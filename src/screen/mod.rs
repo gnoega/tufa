@@ -1,6 +1,7 @@
 pub mod account_list;
 pub mod confirm;
 pub mod export;
+pub mod notification;
 pub mod password;
 pub mod vault_list;
 
