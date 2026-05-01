@@ -3,6 +3,7 @@ pub mod confirm;
 pub mod export;
 pub mod notification;
 pub mod password;
+pub mod search;
 pub mod vault_list;
 
 #[derive(Debug)]

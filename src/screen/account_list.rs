@@ -15,6 +15,7 @@ use crate::{
         confirm::{Confirm, ConfirmKind},
         export::{ExportState, ExportTotp},
         notification::Notification,
+        search::{Search, SearchState},
         vault_list::VaultList,
     },
     totp::{TotpEntry, totp_ttl},
@@ -37,7 +38,7 @@ enum BottomBarKind {
     #[default]
     Hint,
     Notification(Notification),
-    Search(String),
+    Search(Search),
 }
 
 #[derive(Debug)]
@@ -105,14 +106,16 @@ impl AccountList {
             Cell::from("TTL").style(Style::default().fg(DIM).bold()),
         ]);
 
-        let rows: Vec<Row> = if self.entries.is_empty() {
+        let visible = self.filtered_entries();
+
+        let rows: Vec<Row> = if visible.is_empty() {
             vec![Row::new(vec![
                 Cell::from("  no accounts").style(Style::default().fg(DIM)),
             ])]
         } else {
-            self.entries
+            visible
                 .iter()
-                .map(|e| {
+                .map(|(_, e)| {
                     let code = e.generate_otp().unwrap_or_else(|_| "error".into());
                     Row::new(vec![
                         Cell::from(format!("  {}", e.display_name()))
@@ -164,12 +167,8 @@ impl AccountList {
             BottomBarKind::Notification(n) => {
                 frame.render_widget(n.draw(), bottom_area);
             }
-            BottomBarKind::Search(query) => {
-                let input = format!("{}▌", query);
-                frame.render_widget(
-                    Paragraph::new(input).style(Style::default().fg(TEXT)),
-                    bottom_area,
-                );
+            BottomBarKind::Search(s) => {
+                frame.render_widget(s.draw(), bottom_area);
             }
         };
 
@@ -182,16 +181,18 @@ impl AccountList {
     }
 
     pub fn handle_key(mut self, key: KeyCode) -> Screen {
-        if let BottomBarKind::Search(ref mut query) = self.bottom_bar {
-            match key {
-                KeyCode::Char(c) => query.push(c),
-                KeyCode::Backspace => {
-                    query.pop();
+        if let BottomBarKind::Search(ref mut search) = self.bottom_bar {
+            match search.handle_key(key) {
+                SearchState::Active => {}
+                SearchState::Dismiss => self.bottom_bar = BottomBarKind::Hint,
+                SearchState::Confirm => {
+                    if let Some(orig_i) = self.get_selected_original_index() {
+                        self.state.select(Some(orig_i))
+                    }
+                    self.bottom_bar = BottomBarKind::Hint
                 }
-                KeyCode::Esc => self.bottom_bar = BottomBarKind::Hint,
-                KeyCode::Enter => {}
-                _ => {}
-            }
+            };
+
             return Screen::AccountList(self);
         }
 
@@ -229,9 +230,9 @@ impl AccountList {
             KeyCode::Char('q') => Screen::Exit,
             KeyCode::Esc => Screen::VaultList(VaultList::new()),
             KeyCode::Down | KeyCode::Char('j') => {
+                let len = self.filtered_entries().len();
                 let i = self.state.selected().unwrap_or(0);
-                self.state
-                    .select(Some((i + 1).min(self.entries.len().saturating_sub(1))));
+                self.state.select(Some((i + 1).min(len.saturating_sub(1))));
                 Screen::AccountList(self)
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -250,7 +251,7 @@ impl AccountList {
                 }
             }
             KeyCode::Char('d') => {
-                if let Some(i) = self.state.selected()
+                if let Some(i) = self.get_selected_original_index()
                     && let Some(entry) = self.entries.get(i)
                 {
                     self.popup = Some(PopUpKind::ConfirmDelete {
@@ -261,7 +262,7 @@ impl AccountList {
                 Screen::AccountList(self)
             }
             KeyCode::Char('/') => {
-                self.bottom_bar = BottomBarKind::Search(String::default());
+                self.bottom_bar = BottomBarKind::Search(Search::new());
                 Screen::AccountList(self)
             }
             KeyCode::Enter => {
@@ -282,7 +283,15 @@ impl AccountList {
         }
     }
     pub fn get_selected(&self) -> Option<TotpEntry> {
-        self.entries.get(self.state.selected()?).cloned()
+        let filtered = self.filtered_entries();
+        let i = self.state.selected()?;
+        filtered.get(i).map(|&(_, e)| e.clone())
+    }
+
+    fn get_selected_original_index(&self) -> Option<usize> {
+        let filtered = self.filtered_entries();
+        let i = self.state.selected()?;
+        filtered.get(i).map(|&(orig_i, _)| orig_i)
     }
 
     pub fn cleanup(&mut self) {
@@ -302,5 +311,20 @@ impl AccountList {
 
     fn notify(&mut self, n: Notification) {
         self.bottom_bar = BottomBarKind::Notification(n)
+    }
+
+    fn filtered_entries(&self) -> Vec<(usize, &TotpEntry)> {
+        let query = match &self.bottom_bar {
+            BottomBarKind::Search(Search { query, .. }) if !query.is_empty() => {
+                query.to_lowercase()
+            }
+            _ => return self.entries.iter().enumerate().collect(),
+        };
+
+        self.entries
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.display_name().to_lowercase().contains(&query))
+            .collect()
     }
 }
